@@ -1,0 +1,365 @@
+﻿<html>
+<head>
+<script type="text/javascript"
+	src="http://code.jquery.com/jquery-2.2.4.min.js"></script>
+<script type="text/javascript">
+	// Initialize
+	var parameterCount = 1;
+	var responseCount = 1;
+	
+	// Delete a specific row.
+	function deleteSpecificRow(button) {
+		var tr = button.parentNode.parentNode;
+		var table = tr.parentNode;
+		var tableId = table.id;
+		if (tableId == "parameters" && parameterCount > 1) {
+			table.removeChild(tr);
+			parameterCount--;
+		}
+		else if (tableId == "responses" && responseCount > 1) {
+			table.removeChild(tr);
+			responseCount--;
+		}
+	}
+	
+	// Delete a row.
+	function deleteRow(rowType) {
+		if (rowType == "parameters" && parameterCount > 1) {
+			$(".parameterRow:eq(" + (parameterCount - 1) + ")").remove();
+			parameterCount--;
+		}
+		else if (rowType == "responses" && responseCount > 1) {
+			$(".responseRow:eq(" + (responseCount - 1) + ")").remove();
+			responseCount--;
+		}
+	}
+	
+	// Add a row.
+	function addRow(rowType) {
+		var table = null;
+		if (rowType == "parameters") {
+			parameterCount++;
+			table = document.getElementById("parameters");
+		}
+		else if (rowType == "responses") {
+			responseCount++;
+			table = document.getElementById("responses");
+		}
+		var tr = table.childNodes[1].childNodes[2].cloneNode(true); // There is a <tbody> between <table> and <tr>. Set true for cloneNode in order to copy all the child nodes under <tr>. <tr> and text take turns to appear under <tbody>.
+		table.appendChild(tr);
+	}
+	
+	// Generate response parameters.
+	function generateResponseParameters(input) {
+		var responseParameterCount = input.value;
+		var tr = input.parentNode.parentNode;
+		var textarea = tr.childNodes[15].childNodes[1];
+		var json = "{\n";
+		for (var i = 0; i < responseParameterCount; i++) {
+			if (i == responseParameterCount - 1) {
+				json += "\"\" : \"\"\n"; 
+			}
+			else {
+				json += "\"\" : \"\",\n"; 
+			}
+		}
+		json = json.substring(0, json.length - 1);
+		json += "\n}";
+		textarea.innerHTML = json;
+	}
+	
+	$(document).ready(function() {
+		// Submit Form
+		$("#submitForm").click(function() {
+			// Get parameters.
+			var parameters = [];
+			for (var i = 0; i < parameterCount; i++) {
+				var parameter = {
+					"name" : $(".parameterName:eq(" + i + ")").val(),
+					"in" : $(".parameterIn:eq(" + i + ")").val(),
+					"required" : $(".parameterRequired:eq(" + i + ")").val(),
+					"description" : $(".parameterDescription:eq(" + i + ")").val(),
+					"type" : $(".parameterType:eq(" + i + ")").val()
+				}
+				var parameterIn = parameter.in;
+				if (parameterIn == "body") {
+					parameter.schema = {
+						"$ref" : $(".parameterSchemaRef:eq(" + i + ")").val()
+					}
+				}
+				parameters.push(parameter);
+			}
+			
+			// Get Responses.
+			var responses = {};
+			for (var i = 0; i < responseCount; i++) {
+				var schema = {
+					"$ref" : $(".responseSchemaRef:eq(" + i + ")").val()
+				}
+				var json = JSON.parse($(".responseExampleJsons:eq(" + i + ")").val());
+				var examples = {
+					"application/json" : json
+				}
+				var codeBlock = {
+					"description" : $(".responseDescription:eq(" + i + ")").val(),
+					"schema" : schema,
+					"examples" : examples
+				}
+				var code = $(".responseCode:eq(" + i + ")").val();
+				responses[code] = codeBlock;
+			}
+			
+			// Combine data.
+			var tags = [];
+			tags.push($("#tags").val());
+			var consumes = [];
+			consumes.push($("#consumes").val());
+			var produces = [];
+			produces.push($("#produces").val());
+			var methodBlock = {
+				"description" : $("#description").val(),
+				"tags" : tags,
+				"consumes" : consumes,
+				"produces" : produces,
+				"parameters" : parameters,
+				"responses" : responses
+			}
+			var method = $("#method").val();
+			var pathBlock = {};
+			pathBlock[method] = methodBlock;
+			var path = $("#path").val();
+			var swagger = {};
+			swagger[path] = pathBlock; 
+			
+			// Print out Json.
+			swagger = JSON.stringify(swagger, null, " ");
+			document.getElementById("outputSwagger").innerHTML = swagger;
+			return false;
+		});
+		
+		// Submit Swagger
+		$("#submitSwagger").click(function() {
+			// Path
+			var swagger = JSON.parse($("#inputSwagger").val());
+			var path = Object.keys(swagger)[0];
+			$("#path").val(path);
+			
+			// Method
+			var pathBlock = swagger[path];
+			var method = Object.keys(pathBlock)[0];
+			$("#method").val(method);
+			
+			// The block belongs to the method.
+			var methodBlock = pathBlock[method];
+			
+			// Description
+			var description = methodBlock.description;
+			$("#description").val(description);
+			
+			// Tags
+			var tags = methodBlock.tags[0];
+			$("#tags").val(tags);
+			
+			// Consumes
+			var consumes = methodBlock.consumes[0];
+			$("#consumes").val(consumes);
+			
+			// Produces
+			var produces = methodBlock.produces[0];
+			$("#produces").val(produces);
+			
+			// Add or delete parameter rows.
+			var parameters = methodBlock.parameters;
+			var updatedParameterCount = parameters.length;
+			var currentParameterCount = parameterCount;
+			if (currentParameterCount < updatedParameterCount) {
+				for (var i = 0; i < updatedParameterCount - currentParameterCount; i++) {
+					addRow("parameters");
+				}
+			}
+			else if (currentParameterCount > updatedParameterCount) {
+				for (var i = 0; i < currentParameterCount - updatedParameterCount; i++) {
+					deleteRow("parameters");
+				}
+			}
+			
+			// Plug in parameters.
+			var i = 0;
+			$(".parameterRow").each(function() {  
+				var parameter = parameters[i];
+				var parameterName = parameter.name;
+				$(this).find("td").eq(1).find("input").eq(0).val(parameterName);
+				var parameterIn = parameter.in;
+				$(this).find("td").eq(3).find("select").eq(0).val(parameterIn);
+				if (parameter.hasOwnProperty("schema")) {
+					var parameterSchemaRef = parameter.schema["$ref"];
+					$(this).find("td").eq(5).find("input").eq(0).val(parameterSchemaRef);
+				}
+				var parameterRequired = parameter.required;
+				$(this).find("td").eq(7).find("select").eq(0).val(parameterRequired);
+				var parameterDescription = parameter.description;
+				$(this).find("td").eq(9).find("input").eq(0).val(parameterDescription);
+				var parameterType = parameter.type;
+				$(this).find("td").eq(11).find("select").eq(0).val(parameterType);
+				i++;
+			});
+			
+			// Add or delete response rows.
+			var responses = methodBlock.responses;
+			var updatedResponseCount = Object.keys(responses).length;
+			var currentResponseCount = responseCount;
+			if (currentResponseCount < updatedResponseCount) {
+				for (var i = 0; i < updatedResponseCount - currentResponseCount; i++) {
+					addRow("responses");
+				}
+			}
+			else if (currentResponseCount > updatedResponseCount) {
+				for (var i = 0; i < currentResponseCount - updatedResponseCount; i++) {
+					deleteRow("responses");
+				}
+			}
+			
+			// Plug in responses. 
+			var i = 0;
+			$(".responseRow").each(function() {  
+				var code = Object.keys(responses)[i];
+				$(this).find("td").eq(1).find("select").eq(0).val(code);
+				var codeBlock = responses[code];
+				var responseDescription = codeBlock.description;
+				$(this).find("td").eq(3).find("input").eq(0).val(responseDescription);
+				var responseSchemaRef = codeBlock.schema["$ref"];
+				$(this).find("td").eq(5).find("input").eq(0).val(responseSchemaRef);
+				var responseExampleJsons = codeBlock.examples["application/json"];
+				$(this).find("td").eq(7).find("textarea").eq(0).val(JSON.stringify(responseExampleJsons, null, " "));
+				i++;
+			});
+		
+			// Preserve the data.
+			return false;
+		});
+	});
+</script>
+</head>
+<body>
+	<h1>Mock Swagger</h1>
+	<form>
+		<!-- Info -->
+		<table id="info">
+			<tr>
+				<td>Path</td>
+				<td><input type="text" id="path" value="/"/></td>
+			</tr>
+			<tr>
+				<td>Method</td>
+				<td>
+					<select id="method">
+						<option value="get">get</option>
+						<option value="post">post</option>
+						<option value="patch">patch</option>
+						<option value="delete">delete</option>
+					</select>
+				</td>
+			</tr>
+			<tr>
+				<td>Description</td>
+				<td><input type="text" id="description"/ value=""></td>
+			</tr>
+			<tr>
+				<td>Tags</td>
+				<td><input type="text" id="tags" value=""/></td>
+			</tr>
+			<tr>
+				<td>Consumes</td>
+				<td><input type="text" id="consumes" value="application/json"/></td>
+			</tr>
+			<tr>
+				<td>Produces</td>
+				<td><input type="text" id="produces" value="application/json"/></td>
+			</tr>
+		</table><p/>
+		<!-- Parameters  -->
+		<table id="parameters">
+			<tr>
+				<td>Parameters</td>
+				<td colspan="9"><input type="button" value="Add" onclick='addRow("parameters")'></td>
+			</tr>
+			<tr class="parameterRow">
+				<td>Name</td>
+				<td><input type="text" class="parameterName" value="token"/></td>
+				<td>In</td>
+				<td>
+					<select class="parameterIn">
+						<option>path</option>
+						<option>token</option>
+						<option>body</option>
+					</select>
+				</td>
+				<td>Schema</td>
+				<td>
+					 <input type="text" class="parameterSchemaRef" value="#/definitions/"/>
+				</td>
+				<td>Required</td>
+				<td>
+					<select class="parameterRequired">
+						<option>true</option>
+						<option>false</option>
+					</select>
+				</td>
+				<td>Description</td>
+				<td><input type="text" class="parameterDescription" value=""/></td>
+				<td>Type</td>
+				<td>
+					<select class="parameterType">
+						<option>String</option>
+						<option>Integer</option>
+						<option>Double</option>
+						<option>Boolean</option>
+						<option>Date</option>
+						<option>File</option>
+					</select>
+				</td>
+				<td><input type="button" value="Delete" onclick="deleteSpecificRow(this)"></td>
+			</tr>
+		</table><p/>
+		<!-- Responses  -->
+		<table id="responses">
+			<tr>
+				<td>Responses</td>
+				<td colspan="7"><input type="button" value="Add" onclick='addRow("responses")'></td>
+			</tr>
+			<tr class="responseRow">
+				<td>Code</td>
+				<td>
+					<select class="responseCode">
+						<option>200</option>
+						<option>201</option>
+						<option>404</option>
+					</select>
+				</td>
+				<td>Description</td>
+				<td><input type="text" class="responseDescription" value="正常操作"/></td>
+				<td>Schema</td>
+				<td><input type="text" class="responseSchemaRef" value="#/definitions/"/></td>
+				<td>Examples</td>
+				<td>
+					<textarea class="responseExampleJsons" rows="10" cols="20">{"":""}</textarea>
+				</td> 
+				<td>Return Count</td>
+				<td><input type="text" value="1" onchange="generateResponseParameters(this)"/></td>
+				<td><input type="button" value="Delete" onclick="deleteSpecificRow(this)"></td>
+			</tr>
+		</table><p/>
+		<table>
+			<tr>
+				<td><input type="submit" id="submitForm" value="Form to Swagger"/></td>
+				<td><input type="submit" id="submitSwagger" value="Swagger to Form"/></td>
+			</tr>
+			<tr>
+				<td><textarea id="outputSwagger" rows="60" cols="60"></textarea></td>
+				<td><textarea id="inputSwagger" rows="60" cols="60"></textarea></td>
+			</tr>
+		</table>
+	</form>
+	Created By Evolution Tech
+</body>
+</html>
